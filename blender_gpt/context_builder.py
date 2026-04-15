@@ -54,7 +54,7 @@ def build_scene_digest(context: bpy.types.Context, max_chars: int) -> str:
             walk_collections(child, depth + 1)
 
     walk_collections(scene.collection)
-    for obj in scene.collection.objects:
+    for obj in scene.objects:
         if obj.parent is None:
             lines.extend(_object_lines(obj, 1))
 
