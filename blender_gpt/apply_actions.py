@@ -1,0 +1,217 @@
+"""Parse assistant output and apply a constrained set of bpy scene edits (main thread only)."""
+
+from __future__ import annotations
+
+import json
+from json import JSONDecoder
+from typing import Any
+
+import bpy
+
+
+def extract_actions_json(assistant_text: str) -> list[dict[str, Any]]:
+    """
+    Find the last JSON object in the message that contains an \"actions\" array.
+    """
+    text = assistant_text.strip()
+    markers = ('{"actions"', "{'actions'")
+    idx = -1
+    for m in markers:
+        j = text.rfind(m)
+        idx = max(idx, j)
+    if idx == -1:
+        return []
+    snippet = text[idx:]
+    try:
+        obj, _end = JSONDecoder().raw_decode(snippet)
+    except json.JSONDecodeError:
+        return []
+
+    actions = obj.get("actions")
+    if not isinstance(actions, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in actions:
+        if isinstance(item, dict) and isinstance(item.get("op"), str):
+            out.append(item)
+    return out
+
+
+def _find_object(name: str) -> bpy.types.Object | None:
+    return bpy.data.objects.get(name)
+
+
+def apply_actions(context: bpy.types.Context, actions: list[dict[str, Any]]) -> list[str]:
+    """
+    Apply actions in order. Returns human-readable log lines.
+    Must run on the main thread with a valid context.
+    """
+    logs: list[str] = []
+    if not actions:
+        return logs
+
+    bpy.ops.ed.undo_push(message="BlenderGPT apply")
+
+    for raw in actions:
+        op = raw.get("op")
+        try:
+            if op == "create_primitive":
+                _apply_create_primitive(context, raw, logs)
+            elif op == "delete_objects":
+                _apply_delete(context, raw, logs)
+            elif op == "set_transform":
+                _apply_set_transform(raw, logs)
+            elif op == "rename_object":
+                _apply_rename(raw, logs)
+            elif op == "shade_smooth":
+                _apply_shade(raw, logs, smooth=True)
+            elif op == "shade_flat":
+                _apply_shade(raw, logs, smooth=False)
+            elif op == "add_modifier":
+                _apply_add_modifier(raw, logs)
+            else:
+                logs.append(f"skip unknown op: {op!r}")
+        except Exception as e:
+            logs.append(f"error on {op!r}: {e}")
+
+    return logs
+
+
+def _vec3(val: Any, default=(0.0, 0.0, 0.0)) -> tuple[float, float, float]:
+    if isinstance(val, (list, tuple)) and len(val) >= 3:
+        return (float(val[0]), float(val[1]), float(val[2]))
+    return default
+
+
+def _apply_create_primitive(
+    context: bpy.types.Context,
+    raw: dict[str, Any],
+    logs: list[str],
+) -> None:
+    prim = str(raw.get("primitive", "CUBE")).upper()
+    name = raw.get("name")
+    loc = _vec3(raw.get("location"), (0.0, 0.0, 0.0))
+    size = raw.get("size")
+
+    view_layer = context.view_layer
+    prev_active = view_layer.objects.active
+    prev_sel = list(view_layer.objects.selected)
+
+    try:
+        if prim == "CUBE":
+            bpy.ops.mesh.primitive_cube_add(location=loc)
+        elif prim == "SPHERE":
+            bpy.ops.mesh.primitive_uv_sphere_add(location=loc)
+        elif prim == "CYLINDER":
+            bpy.ops.mesh.primitive_cylinder_add(location=loc)
+        elif prim == "CONE":
+            bpy.ops.mesh.primitive_cone_add(location=loc)
+        elif prim == "PLANE":
+            bpy.ops.mesh.primitive_plane_add(location=loc)
+        else:
+            logs.append(f"create_primitive: unknown primitive {prim!r}")
+            return
+
+        obj = context.view_layer.objects.active
+        if obj is None:
+            logs.append("create_primitive: no active object after add")
+            return
+        if isinstance(name, str) and name.strip():
+            obj.name = name.strip()[:63]
+        if isinstance(size, (int, float)) and size > 0 and prim == "CUBE":
+            s = float(size)
+            obj.scale = (s, s, s)
+        logs.append(f"create_primitive: {prim} -> {obj.name!r}")
+    finally:
+        for o in view_layer.objects.selected:
+            o.select_set(False)
+        for o in prev_sel:
+            if o.name in view_layer.objects:
+                o.select_set(True)
+        if prev_active and prev_active.name in view_layer.objects:
+            view_layer.objects.active = prev_active
+
+
+def _apply_delete(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    names = raw.get("names")
+    if not isinstance(names, list):
+        return
+    view_layer = context.view_layer
+    for n in names:
+        if not isinstance(n, str):
+            continue
+        obj = bpy.data.objects.get(n)
+        if not obj:
+            logs.append(f"delete: missing {n!r}")
+            continue
+        view_layer.objects.active = obj
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.ops.object.delete(use_global=False)
+        logs.append(f"delete: {n!r}")
+
+
+def _apply_set_transform(raw: dict[str, Any], logs: list[str]) -> None:
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj:
+        logs.append(f"set_transform: missing {name!r}")
+        return
+    if "location" in raw:
+        obj.location = _vec3(raw.get("location"), obj.location)
+    if "rotation_euler" in raw:
+        rx, ry, rz = _vec3(raw.get("rotation_euler"), obj.rotation_euler)
+        obj.rotation_euler = (rx, ry, rz)
+    if "scale" in raw:
+        obj.scale = _vec3(raw.get("scale"), obj.scale)
+    logs.append(f"set_transform: {name!r}")
+
+
+def _apply_rename(raw: dict[str, Any], logs: list[str]) -> None:
+    a = raw.get("from_name")
+    b = raw.get("to_name")
+    if not isinstance(a, str) or not isinstance(b, str):
+        return
+    obj = _find_object(a)
+    if not obj:
+        logs.append(f"rename: missing {a!r}")
+        return
+    obj.name = b.strip()[:63]
+    logs.append(f"rename: {a!r} -> {b!r}")
+
+
+def _apply_shade(raw: dict[str, Any], logs: list[str], smooth: bool) -> None:
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj or obj.type != "MESH":
+        logs.append(f"shade: missing or non-mesh {name!r}")
+        return
+    mesh = obj.data
+    for poly in mesh.polygons:
+        poly.use_smooth = smooth
+    mesh.update()
+    logs.append(f"{'shade_smooth' if smooth else 'shade_flat'}: {name!r}")
+
+
+def _apply_add_modifier(raw: dict[str, Any], logs: list[str]) -> None:
+    name = raw.get("name")
+    mod_type = raw.get("modifier_type")
+    if not isinstance(name, str) or not isinstance(mod_type, str):
+        return
+    obj = _find_object(name)
+    if not obj or obj.type != "MESH":
+        logs.append(f"add_modifier: missing or non-mesh {name!r}")
+        return
+    mod_name = raw.get("modifier_name") or mod_type
+    if not isinstance(mod_name, str):
+        mod_name = mod_type
+    mod = obj.modifiers.new(name=mod_name[:63], type=mod_type)
+    if mod_type == "SUBSURF" and hasattr(mod, "levels"):
+        levels = raw.get("levels")
+        if isinstance(levels, int):
+            mod.levels = max(0, min(6, levels))
+    logs.append(f"add_modifier: {name!r} {mod_type!r}")
