@@ -25,6 +25,24 @@ Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model
 
 Only the operations implemented in `apply_actions.py` run. Unknown `op` values are skipped. Prefer a dedicated `.blend` when experimenting.
 
+## Tests
+
+**Fast (no Blender):** parses JSON action lists and prompt wiring.
+
+```bash
+pip install -r requirements-dev.txt
+# or: pip install -e ".[dev]"
+pytest
+```
+
+**Integration (real `bpy`):** requires the `blender` executable on `PATH`.
+
+```bash
+blender --background --python tests/blender_e2e.py
+# or
+pytest tests/test_blender_subprocess.py
+```
+
 ## License
 
 MIT (aligned with the ArchiGPT / Archi ecosystem).
