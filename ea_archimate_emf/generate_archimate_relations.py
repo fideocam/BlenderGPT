@@ -2,10 +2,10 @@
 """
 Canonical ArchiMate 3.x relationship connectors as SVG → EMF (Inkscape).
 
-Notation follows the usual ArchiMate textbook / tool conventions:
-  — solid, - - dashed, ··· dotted
-  ◆ filled diamond (composition), ◇ hollow diamond (aggregation)
-  ▶ filled arrow, ▷ open arrow, △ hollow closed arrow (realization / specialization)
+Relationship *geometry* follows the usual ArchiMate textbook / tool conventions
+(solid / dashed / dotted lines, diamond, filled and open arrowheads, etc.). The
+Open Group ArchiMate specification does not fix pixel line weights; strokes here
+are deliberately **thick** for legibility on slides.
 
 Run: python3 generate_archimate_relations.py
 Requires: inkscape on PATH.
@@ -18,9 +18,8 @@ from pathlib import Path
 
 W, H = 280, 72
 STROKE = "#1a1a1a"
-# Align with deck outline weight (~4 pt): relation lines read bolder at slide scale.
-SW = 4.0
-SW_DASH = 4.0
+SW = 6.75
+SW_DASH = 6.75
 DOT = "0 6"
 
 
@@ -44,10 +43,10 @@ def relations() -> list[tuple[str, str]]:
       <path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a" stroke="none"/>
     </marker>
     <marker id="arrowOpen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L12,6 L0,12" fill="none" stroke="#1a1a1a" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M0,0 L12,6 L0,12" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
     </marker>
     <marker id="arrowHollow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L12,6 L0,12 z" fill="none" stroke="#1a1a1a" stroke-width="3.5" stroke-linejoin="round"/>
+      <path d="M0,0 L12,6 L0,12 z" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linejoin="round"/>
     </marker>
   </defs>
 """
@@ -94,7 +93,7 @@ def relations() -> list[tuple[str, str]]:
     # Same arrowhead style as serving; thicker stroke is a common way to tell them apart in legends.
     trig = (
         defs
-        + f'<line x1="40" y1="{cy}" x2="{x1}" y2="{cy}" stroke="{STROKE}" stroke-width="5.5" '
+        + f'<line x1="40" y1="{cy}" x2="{x1}" y2="{cy}" stroke="{STROKE}" stroke-width="8.5" '
         + 'marker-end="url(#arrowFilled)"/>'
     )
     items.append(("Archimate_Rel_Triggering", trig))

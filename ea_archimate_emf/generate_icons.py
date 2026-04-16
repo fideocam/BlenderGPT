@@ -3,6 +3,11 @@
 Generate ArchiMate-style stencil SVGs aligned with fideocam/EAinPowerpoint (Archimate_blank.pptx),
 then export to .emf via Inkscape CLI.
 
+The ArchiMate standard separates *concepts* from *notation* (The Open Group, ArchiMate
+Specification): geometry and colours follow the usual full-palette / layer conventions;
+outline thickness is not prescribed by the spec — we use intentionally **thick** strokes
+so shapes read clearly on slides and in EMF.
+
 Each graphic includes four connection-target markers (left, right, top, bottom) as visible
 guides for where to attach connectors in PowerPoint.
 
@@ -19,11 +24,10 @@ from connection_anchors import connection_anchor_fragment
 
 W, H = 200, 120
 STROKE = "#2f2f2f"
-# Match Archimate_blank.pptx: most shape outlines use a:ln w="38100" (~4 pt in OOXML).
-STROKE_W = 4.25
-# Secondary / interior strokes (tabs, inner blocks, decoration lines)
-STROKE_W_INNER = 2.85
-STROKE_W_DETAIL = 3.3
+# Visibly fat borders (spec does not fix line weight; this is tuned for slide/EMF clarity).
+STROKE_W = 6.75
+STROKE_W_INNER = 4.5
+STROKE_W_DETAIL = 5.25
 
 # Approximate ArchiMate / deck tints
 COL = {
@@ -96,6 +100,21 @@ def arrow_head(x: float, y: float, deg: float = 0) -> str:
     )
 
 
+def business_actor_icon() -> str:
+    """ArchiMate default-style business actor: stick-figure icon (not a plain ellipse)."""
+    c = COL["business"]
+    sw = STROKE_W
+    return (
+        f'<g fill="{c}" stroke="{STROKE}" stroke-width="{sw}" stroke-linecap="round" stroke-linejoin="round">'
+        f'<circle cx="100" cy="34" r="11" fill="{c}"/>'
+        f'<path d="M 100 45 L 100 74" fill="none"/>'
+        f'<path d="M 84 56 L 116 56" fill="none"/>'
+        f'<path d="M 100 74 L 88 96" fill="none"/>'
+        f'<path d="M 100 74 L 112 96" fill="none"/>'
+        f"</g>"
+    )
+
+
 def icons() -> list[tuple[str, str]]:
     """(filename_stem, svg_inner_body including optional label)."""
     o: list[tuple[str, str]] = []
@@ -104,7 +123,7 @@ def icons() -> list[tuple[str, str]]:
     o.append(
         (
             "Business_Actor",
-            ellipse(100, 52, 38, 22, COL["business"]) + label("Business Actor"),
+            business_actor_icon() + label("Business Actor"),
         )
     )
     o.append(
