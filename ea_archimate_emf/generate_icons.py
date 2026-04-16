@@ -19,7 +19,11 @@ from connection_anchors import connection_anchor_fragment
 
 W, H = 200, 120
 STROKE = "#2f2f2f"
-STROKE_W = 1.8
+# Match Archimate_blank.pptx: most shape outlines use a:ln w="38100" (~4 pt in OOXML).
+STROKE_W = 4.25
+# Secondary / interior strokes (tabs, inner blocks, decoration lines)
+STROKE_W_INNER = 2.85
+STROKE_W_DETAIL = 3.3
 
 # Approximate ArchiMate / deck tints
 COL = {
@@ -151,8 +155,8 @@ def icons() -> list[tuple[str, str]]:
             "Application_Component",
             rnd_rect(56, 30, 108, 46, COL["application"], rx=3)
             + (
-                f'<rect x="44" y="32" width="14" height="12" fill="#90caf9" stroke="{STROKE}" stroke-width="1.2"/>'
-                f'<rect x="44" y="48" width="14" height="12" fill="#90caf9" stroke="{STROKE}" stroke-width="1.2"/>'
+                f'<rect x="44" y="32" width="14" height="12" fill="#90caf9" stroke="{STROKE}" stroke-width="{STROKE_W_INNER}"/>'
+                f'<rect x="44" y="48" width="14" height="12" fill="#90caf9" stroke="{STROKE}" stroke-width="{STROKE_W_INNER}"/>'
             )
             + label("Application Component"),
         )
@@ -188,7 +192,7 @@ def icons() -> list[tuple[str, str]]:
         (
             "Technology_Node",
             rnd_rect(40, 26, 120, 52, COL["technology"], rx=4)
-            + f'<rect x="52" y="38" width="96" height="28" fill="#a5d6a7" stroke="{STROKE}" stroke-width="1.2" rx="2"/>'
+            + f'<rect x="52" y="38" width="96" height="28" fill="#a5d6a7" stroke="{STROKE}" stroke-width="{STROKE_W_INNER}" rx="2"/>'
             + label("Node"),
         )
     )
@@ -245,7 +249,7 @@ def icons() -> list[tuple[str, str]]:
         (
             "Representation",
             rnd_rect(48, 30, 104, 50, COL["neutral"], rx=2)
-            + f'<path d="M 58 42 L 142 42 M 58 54 L 130 54 M 58 66 L 138 66" stroke="{STROKE}" stroke-width="1.4"/>'
+            + f'<path d="M 58 42 L 142 42 M 58 54 L 130 54 M 58 66 L 138 66" stroke="{STROKE}" stroke-width="{STROKE_W_DETAIL}"/>'
             + label("Representation"),
         )
     )

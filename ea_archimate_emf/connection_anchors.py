@@ -21,7 +21,7 @@ def connection_anchor_fragment(view_w: float, view_h: float, margin: float | Non
     r_ring = max(3.5, min(view_w, view_h) * 0.035)
     r_dot = r_ring * 0.38
     stroke = "#1565c0"
-    sw = 1.35
+    sw = 2.25
     fill_dot = "#1565c0"
 
     def target(px: float, py: float) -> str:
