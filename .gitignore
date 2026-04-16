@@ -1,12 +1,3 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-
-# EA-in-PowerPoint tooling: commit scripts; ignore generated binaries
-ea_archimate_emf/emf/
-ea_archimate_emf/svg/
-ea_archimate_emf/exact_from_powerpoint/
-ea_archimate_emf/archimate_relations_emf/
-ea_archimate_emf/_pdf_stage/
-~$*.pptx
-~$*.ppt

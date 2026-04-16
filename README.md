@@ -53,6 +53,10 @@ blender --background --python tests/blender_e2e.py
 pytest tests/test_blender_subprocess.py
 ```
 
+## Related workspaces
+
+ArchiMate / PowerPoint EMF tooling lives in a **separate folder**: `EA-PowerPoint-tools` next to this repo on your machine (or open **`BlenderGPT-EA-Drone.code-workspace`** on the Desktop for a multi-root Cursor setup). Drone experiments use the **`drone`** folder.
+
 ## License
 
 MIT (aligned with the ArchiGPT / Archi ecosystem).
