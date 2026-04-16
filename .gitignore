@@ -1,3 +1,6 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Local clutter (do not commit)
+ea_archimate_emf/
