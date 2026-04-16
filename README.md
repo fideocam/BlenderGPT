@@ -21,6 +21,8 @@ Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model
 - If the model ends its reply with a JSON object `{"actions":[...]}`, those actions are validated and applied on the main thread (one undo step).
 - **Stop** sets a cancel flag (the HTTP client may not interrupt immediately).
 
+For a **3D-print-oriented task list** and how it maps to JSON actions, see **[process.md](process.md)** in the repository root.
+
 ## Capabilities (geometry)
 
 - **Primitives:** cube, sphere, **cylinder**, cone, plane, **torus**, **ico sphere**, **Suzanne** (`MONKEY`), plus optional `scale` / cube `size`.

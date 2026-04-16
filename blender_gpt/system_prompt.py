@@ -32,8 +32,12 @@ Each action is one object. Allowed ops only (unknown ops are ignored):
    {"op":"shade_smooth","name":"MeshObject"}
    {"op":"shade_flat","name":"MeshObject"}
 
-6) add_modifier (subset)
+6) add_modifier — SUBSURF plus common print-related modifiers
    {"op":"add_modifier","name":"MeshObject","modifier_type":"SUBSURF","modifier_name":"Subdivision","levels":2}
+   {"op":"add_modifier","name":"Part","modifier_type":"SOLIDIFY","thickness":0.002,"solidify_offset":0.0}
+   {"op":"add_modifier","name":"Part","modifier_type":"BEVEL","width":0.0005,"segments":2}
+   {"op":"add_modifier","name":"Part","modifier_type":"ARRAY","count":4,"relative_offset_displace":[1,0,0]}
+   {"op":"add_modifier","name":"Part","modifier_type":"MIRROR","mirror_axis":"X"}
 
 7) boolean_difference / boolean_union / boolean_intersect — holes, cuts, joins (both meshes must exist)
    {"op":"boolean_difference","target":"MeshToModify","cutter":"CutterMesh","apply":true,"delete_cutter":false,"solver":"EXACT"|"FAST"}
@@ -47,6 +51,33 @@ Each action is one object. Allowed ops only (unknown ops are ignored):
 9) create_armature — simple connected bone chain (“skeleton” rig stub) along one world axis in armature local space
    {"op":"create_armature","name":"Rig","location":[x,y,z],"axis":"Y"|"X"|"Z"|"-Y"…,"bone_count":5,"segment_length":0.25}
    Not a full human rig; use for mechanical hinges, ropes, or as a base to weight-paint later.
+
+10) set_print_units — preset scene units for millimetre-style metric workflows (verify grid vs slicer)
+    {"op":"set_print_units"}
+
+11) apply_scale — bake object scale into mesh data (recommended before STL export)
+    {"op":"apply_scale","names":["Part"]}  or  {"op":"apply_scale","name":"Part"}
+
+12) export_stl — export one mesh to an absolute file path (ASCII/binary follows Blender defaults)
+    {"op":"export_stl","name":"Part","filepath":"/absolute/path/part.stl"}
+
+13) join_meshes — join multiple mesh objects into the first listed object (all must exist)
+    {"op":"join_meshes","names":["Base","Addon","Rib"]}
+
+14) duplicate_object
+    {"op":"duplicate_object","name":"Bolt","new_name":"Bolt_copy","linked":false}
+
+15) merge_by_distance — weld close vertices (helps watertightness after booleans)
+    {"op":"merge_by_distance","name":"Part","threshold":0.0001}
+
+16) normals_make_consistent — recalculate normals (outside by default)
+    {"op":"normals_make_consistent","name":"Part","inside":false}
+
+17) origin_to_geometry — set object origin to mesh median (useful before rotating on bed)
+    {"op":"origin_to_geometry","name":"Part"}
+
+18) place_on_build_plate — translate mesh so its world-space bounding-box minimum Z sits at 0
+    {"op":"place_on_build_plate","name":"Part"}
 
 Rules for JSON:
 - Use double quotes. No trailing commas.

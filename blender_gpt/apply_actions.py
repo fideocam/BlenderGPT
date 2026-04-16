@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from json import JSONDecoder
 from typing import Any
 
@@ -81,6 +82,24 @@ def apply_actions(context: bpy.types.Context, actions: list[dict[str, Any]]) -> 
                 _apply_groove_box_cut(context, raw, logs)
             elif op == "create_armature":
                 _apply_create_armature(context, raw, logs)
+            elif op == "set_print_units":
+                _apply_set_print_units(context, logs)
+            elif op == "apply_scale":
+                _apply_apply_scale(context, raw, logs)
+            elif op == "export_stl":
+                _apply_export_stl(context, raw, logs)
+            elif op == "join_meshes":
+                _apply_join_meshes(context, raw, logs)
+            elif op == "duplicate_object":
+                _apply_duplicate_object(context, raw, logs)
+            elif op == "merge_by_distance":
+                _apply_merge_by_distance(context, raw, logs)
+            elif op == "normals_make_consistent":
+                _apply_normals_make_consistent(context, raw, logs)
+            elif op == "origin_to_geometry":
+                _apply_origin_to_geometry(context, raw, logs)
+            elif op == "place_on_build_plate":
+                _apply_place_on_build_plate(context, raw, logs)
             else:
                 logs.append(f"skip unknown op: {op!r}")
         except Exception as e:
@@ -235,6 +254,36 @@ def _apply_add_modifier(raw: dict[str, Any], logs: list[str]) -> None:
         levels = raw.get("levels")
         if isinstance(levels, int):
             mod.levels = max(0, min(6, levels))
+    elif mod_type == "SOLIDIFY" and hasattr(mod, "thickness"):
+        mod.thickness = float(raw.get("thickness", 0.001))
+        if hasattr(mod, "offset"):
+            mod.offset = float(raw.get("solidify_offset", 0.0))
+    elif mod_type == "BEVEL":
+        if hasattr(mod, "width"):
+            mod.width = float(raw.get("width", 0.0005))
+        if hasattr(mod, "segments") and raw.get("segments") is not None:
+            mod.segments = max(1, int(raw.get("segments", 1)))
+    elif mod_type == "ARRAY":
+        if hasattr(mod, "count"):
+            mod.count = max(1, int(raw.get("count", 2)))
+        if hasattr(mod, "use_relative_offset"):
+            mod.use_relative_offset = True
+        ro = raw.get("relative_offset_displace")
+        if hasattr(mod, "relative_offset_displace") and isinstance(ro, (list, tuple)) and len(ro) >= 3:
+            mod.relative_offset_displace = (float(ro[0]), float(ro[1]), float(ro[2]))
+    elif mod_type == "MIRROR":
+        ax = str(raw.get("mirror_axis", "X")).upper()
+        if hasattr(mod, "use_axis_x"):
+            mod.use_axis_x = ax == "X"
+            mod.use_axis_y = ax == "Y"
+            mod.use_axis_z = ax == "Z"
+        elif hasattr(mod, "use_axis"):
+            try:
+                mod.use_axis = (ax == "X", ax == "Y", ax == "Z")
+            except TypeError:
+                mod.use_axis[0] = ax == "X"
+                mod.use_axis[1] = ax == "Y"
+                mod.use_axis[2] = ax == "Z"
     logs.append(f"add_modifier: {name!r} {mod_type!r}")
 
 
@@ -444,3 +493,244 @@ def _apply_create_armature(
                 o.select_set(True)
         if prev_active and prev_active.name in view_layer.objects:
             view_layer.objects.active = prev_active
+
+
+def _with_active_object(
+    context: bpy.types.Context,
+    obj: bpy.types.Object,
+    callback: Any,
+) -> None:
+    """Select only `obj`, set active, run `callback()` (no args), restore selection."""
+    view_layer = context.view_layer
+    prev_active = view_layer.objects.active
+    prev_sel = list(view_layer.objects.selected)
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        view_layer.objects.active = obj
+        callback()
+    finally:
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in prev_sel:
+            if o.name in view_layer.objects:
+                o.select_set(True)
+        if prev_active and prev_active.name in view_layer.objects:
+            view_layer.objects.active = prev_active
+
+
+def _try_stl_export(filepath: str) -> None:
+    fp = os.path.abspath(os.path.expanduser(filepath))
+    parent = os.path.dirname(fp)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    stl_op = getattr(bpy.ops.wm, "stl_export", None)
+    if stl_op is not None:
+        stl_op(filepath=fp, check_existing=False, use_selection=True)
+        return
+    bpy.ops.export_mesh.stl(filepath=fp, check_existing=False, use_selection=True)
+
+
+def _apply_set_print_units(context: bpy.types.Context, logs: list[str]) -> None:
+    us = context.scene.unit_settings
+    us.system = "METRIC"
+    us.length_unit = "MILLIMETERS"
+    us.scale_length = 0.001
+    logs.append("set_print_units: metric, length millimetres, unit scale 0.001 (verify grid)")
+
+
+def _apply_apply_scale(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    names = raw.get("names")
+    if names is None and isinstance(raw.get("name"), str):
+        names = [raw["name"]]
+    if not isinstance(names, list) or not names:
+        return
+    for n in names:
+        if not isinstance(n, str):
+            continue
+        obj = _find_object(n)
+        if not obj:
+            logs.append(f"apply_scale: missing {n!r}")
+            continue
+
+        def apply_one() -> None:
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+        _with_active_object(context, obj, apply_one)
+        logs.append(f"apply_scale: {n!r}")
+
+
+def _apply_export_stl(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    fp = raw.get("filepath")
+    if not isinstance(fp, str) or not fp.strip():
+        logs.append("export_stl: missing filepath")
+        return
+    names = raw.get("names")
+    if names is None and isinstance(raw.get("name"), str):
+        names = [raw["name"]]
+    if not isinstance(names, list) or len(names) != 1:
+        logs.append("export_stl: provide exactly one mesh (name or single-element names)")
+        return
+    n = names[0]
+    if not isinstance(n, str):
+        return
+    obj = _find_object(n)
+    if not obj or obj.type != "MESH":
+        logs.append(f"export_stl: missing or non-mesh {n!r}")
+        return
+
+    def do_export() -> None:
+        _try_stl_export(fp.strip())
+
+    _with_active_object(context, obj, do_export)
+    logs.append(f"export_stl: {n!r} -> {os.path.abspath(os.path.expanduser(fp.strip()))}")
+
+
+def _apply_join_meshes(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    names = raw.get("names")
+    if not isinstance(names, list) or len(names) < 2:
+        logs.append("join_meshes: need names list with at least 2 meshes")
+        return
+    objs: list[bpy.types.Object] = []
+    for n in names:
+        if not isinstance(n, str):
+            continue
+        o = _find_object(n)
+        if o and o.type == "MESH":
+            objs.append(o)
+    if len(objs) < 2:
+        logs.append("join_meshes: could not resolve two mesh objects")
+        return
+
+    view_layer = context.view_layer
+    prev_active = view_layer.objects.active
+    prev_sel = list(view_layer.objects.selected)
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        base = objs[0]
+        base.select_set(True)
+        view_layer.objects.active = base
+        for o in objs[1:]:
+            o.select_set(True)
+        bpy.ops.object.join()
+        logs.append(f"join_meshes: merged into {base.name!r} ({len(objs)} meshes)")
+    finally:
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in prev_sel:
+            if o.name in view_layer.objects:
+                o.select_set(True)
+        if prev_active and prev_active.name in view_layer.objects:
+            view_layer.objects.active = prev_active
+
+
+def _apply_duplicate_object(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj:
+        logs.append(f"duplicate_object: missing {name!r}")
+        return
+    linked = raw.get("linked", False)
+    if not isinstance(linked, bool):
+        linked = bool(linked)
+    view_layer = context.view_layer
+    prev_active = view_layer.objects.active
+    prev_sel = list(view_layer.objects.selected)
+    try:
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        view_layer.objects.active = obj
+        bpy.ops.object.duplicate(linked=linked)
+        dup = view_layer.objects.active
+        nn = raw.get("new_name")
+        if dup and isinstance(nn, str) and nn.strip():
+            dup.name = nn.strip()[:63]
+        logs.append(f"duplicate_object: {name!r} -> {dup.name if dup else '?'}")
+    finally:
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in prev_sel:
+            if o.name in view_layer.objects:
+                o.select_set(True)
+        if prev_active and prev_active.name in view_layer.objects:
+            view_layer.objects.active = prev_active
+
+
+def _apply_merge_by_distance(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj or obj.type != "MESH":
+        logs.append(f"merge_by_distance: missing or non-mesh {name!r}")
+        return
+    try:
+        threshold = float(raw.get("threshold", 0.0001))
+    except (TypeError, ValueError):
+        threshold = 0.0001
+    threshold = max(1e-8, threshold)
+
+    def edit_merge() -> None:
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="VERT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.mesh.merge_by_distance(threshold=threshold)
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    _with_active_object(context, obj, edit_merge)
+    logs.append(f"merge_by_distance: {name!r} threshold={threshold}")
+
+
+def _apply_normals_make_consistent(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj or obj.type != "MESH":
+        logs.append(f"normals_make_consistent: missing or non-mesh {name!r}")
+        return
+    inside = raw.get("inside", False)
+    if not isinstance(inside, bool):
+        inside = bool(inside)
+
+    def edit_normals() -> None:
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_mode(type="VERT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.mesh.normals_make_consistent(inside=inside)
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    _with_active_object(context, obj, edit_normals)
+    logs.append(f"normals_make_consistent: {name!r}")
+
+
+def _apply_origin_to_geometry(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj:
+        logs.append(f"origin_to_geometry: missing {name!r}")
+        return
+
+    def origin_set() -> None:
+        bpy.ops.object.origin_set(type="ORIGIN_GEOMETRY", center="MEDIAN")
+
+    _with_active_object(context, obj, origin_set)
+    logs.append(f"origin_to_geometry: {name!r}")
+
+
+def _apply_place_on_build_plate(context: bpy.types.Context, raw: dict[str, Any], logs: list[str]) -> None:
+    from mathutils import Vector
+
+    name = raw.get("name")
+    if not isinstance(name, str):
+        return
+    obj = _find_object(name)
+    if not obj or obj.type != "MESH":
+        logs.append(f"place_on_build_plate: missing or non-mesh {name!r}")
+        return
+    mw = obj.matrix_world
+    zs = [(mw @ Vector(corner)).z for corner in obj.bound_box]
+    min_z = min(zs)
+    obj.location.z -= min_z
+    logs.append(f"place_on_build_plate: {name!r} dz={-min_z:.6f}")

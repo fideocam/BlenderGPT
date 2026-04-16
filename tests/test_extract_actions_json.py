@@ -96,3 +96,27 @@ def test_create_primitive_torus_monkey():
     actions = extract_actions_json(text)
     assert actions[0]["primitive"] == "TORUS"
     assert actions[1]["primitive"] == "MONKEY"
+
+
+def test_3d_print_workflow_ops_parse():
+    text = r"""Ready to slice.
+{"actions":[
+  {"op":"set_print_units"},
+  {"op":"merge_by_distance","name":"Bracket","threshold":0.0002},
+  {"op":"normals_make_consistent","name":"Bracket"},
+  {"op":"origin_to_geometry","name":"Bracket"},
+  {"op":"place_on_build_plate","name":"Bracket"},
+  {"op":"apply_scale","names":["Bracket"]},
+  {"op":"export_stl","name":"Bracket","filepath":"/tmp/bracket.stl"}
+]}"""
+    actions = extract_actions_json(text)
+    assert [a["op"] for a in actions] == [
+        "set_print_units",
+        "merge_by_distance",
+        "normals_make_consistent",
+        "origin_to_geometry",
+        "place_on_build_plate",
+        "apply_scale",
+        "export_stl",
+    ]
+    assert actions[-1]["filepath"] == "/tmp/bracket.stl"
