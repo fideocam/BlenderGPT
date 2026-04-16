@@ -21,9 +21,17 @@ Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model
 - If the model ends its reply with a JSON object `{"actions":[...]}`, those actions are validated and applied on the main thread (one undo step).
 - **Stop** sets a cancel flag (the HTTP client may not interrupt immediately).
 
+## Capabilities (geometry)
+
+- **Primitives:** cube, sphere, **cylinder**, cone, plane, **torus**, **ico sphere**, **Suzanne** (`MONKEY`), plus optional `scale` / cube `size`.
+- **Holes / cuts:** `boolean_difference` (and union/intersect) between two mesh objects; optional `delete_cutter`. Position a cutter with `set_transform` first, or use **`groove_box_cut`** for an axis-aligned slot.
+- **Skeletons:** `create_armature` builds a **simple chain of connected bones** along one axis (useful as a rig stub, not a full biped solver).
+
+Complex surfacing (fillets, CNC threads, medical skeletons from scan data, etc.) still needs manual modeling or custom scripts beyond this allowlist.
+
 ## Safety
 
-Only the operations implemented in `apply_actions.py` run. Unknown `op` values are skipped. Prefer a dedicated `.blend` when experimenting.
+Only the operations implemented in `apply_actions.py` run. Unknown `op` values are skipped. Prefer a dedicated `.blend` when experimenting. Booleans need mostly manifold geometry; expect failures on bad meshes.
 
 ## Tests
 

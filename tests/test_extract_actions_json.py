@@ -71,3 +71,28 @@ def test_skips_non_dict_entries():
     assert len(actions) == 2
     assert actions[0]["op"] == "create_primitive"
     assert actions[1]["op"] == "delete_objects"
+
+
+def test_boolean_and_groove_and_armature_parse():
+    text = """Done.
+{"actions":[
+  {"op":"boolean_difference","target":"Body","cutter":"HoleTool","apply":true,"delete_cutter":true},
+  {"op":"groove_box_cut","target":"Plate","center":[0,0,0],"groove_axis":"X","length":2,"width":0.02,"depth":0.05},
+  {"op":"create_armature","name":"Rig","location":[0,0,1],"axis":"Z","bone_count":4,"segment_length":0.2}
+]}"""
+    actions = extract_actions_json(text)
+    assert [a["op"] for a in actions] == [
+        "boolean_difference",
+        "groove_box_cut",
+        "create_armature",
+    ]
+    assert actions[0]["cutter"] == "HoleTool"
+    assert actions[1]["groove_axis"] == "X"
+    assert actions[2]["bone_count"] == 4
+
+
+def test_create_primitive_torus_monkey():
+    text = '{"actions":[{"op":"create_primitive","primitive":"TORUS","name":"T"},{"op":"create_primitive","primitive":"MONKEY"}]}'
+    actions = extract_actions_json(text)
+    assert actions[0]["primitive"] == "TORUS"
+    assert actions[1]["primitive"] == "MONKEY"
