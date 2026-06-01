@@ -17,6 +17,27 @@ _cancel_event = threading.Event()
 _worker_thread: Optional[threading.Thread] = None
 _timer_handle: Optional[Any] = None
 _pending_window_ptr: int = 0
+_active_request_id: int = 0
+
+
+def _worker_alive() -> bool:
+    t = _worker_thread
+    return t is not None and t.is_alive()
+
+
+def _drain_result_queue() -> None:
+    while True:
+        try:
+            _result_queue.get_nowait()
+        except queue.Empty:
+            break
+
+
+def _finish_request(g: BlenderGPTState, status: str, *, response: str | None = None) -> None:
+    g.busy = False
+    g.status = status
+    if response is not None:
+        g.response = response
 
 
 def _addon_preferences(context: bpy.types.Context):
@@ -58,6 +79,7 @@ def _window_from_ptr(ptr: int) -> Optional[bpy.types.Window]:
 
 
 def _worker_main(
+    request_id: int,
     base_url: str,
     model: str,
     num_ctx: int,
@@ -73,34 +95,38 @@ def _worker_main(
             num_ctx=num_ctx,
             cancel_event=_cancel_event,
         )
-        _result_queue.put(("ok", text))
+        _result_queue.put((request_id, "ok", text))
     except InterruptedError:
-        _result_queue.put(("cancel", ""))
+        _result_queue.put((request_id, "cancel", ""))
     except Exception as e:
-        _result_queue.put(("err", str(e)))
+        _result_queue.put((request_id, "err", str(e)))
 
 
 def _timer_poll() -> Optional[float]:
     global _timer_handle, _worker_thread
 
     try:
-        kind, data = _result_queue.get_nowait()
+        request_id, kind, data = _result_queue.get_nowait()
     except queue.Empty:
-        t = _worker_thread
-        if t is not None and t.is_alive():
+        if _worker_alive():
             return 0.15
-        if t is not None and not t.is_alive():
+        if _worker_thread is not None and not _worker_alive():
             _worker_thread = None
             wm = bpy.context.window_manager
             if hasattr(wm, "blender_gpt"):
                 g = wm.blender_gpt
                 if g.busy:
-                    g.busy = False
-                    g.status = "Request ended without a response."
+                    _finish_request(g, "Request ended without a response.")
         _timer_handle = None
         return None
 
     _worker_thread = None
+
+    if request_id != _active_request_id:
+        if _worker_alive():
+            return 0.15
+        _timer_handle = None
+        return None
 
     window = _window_from_ptr(_pending_window_ptr)
     if window is None:
@@ -144,13 +170,21 @@ def _timer_poll() -> Optional[float]:
     return None
 
 
+def _ensure_result_timer() -> None:
+    global _timer_handle
+    if _timer_handle is not None and bpy.app.timers.is_registered(_timer_handle):
+        return
+    _timer_handle = _timer_poll
+    bpy.app.timers.register(_timer_poll, first_interval=0.12)
+
+
 class BG_OT_send(bpy.types.Operator):
     bl_idname = "blender_gpt.send"
     bl_label = "Ask BlenderGPT"
     bl_options = {"REGISTER"}
 
     def execute(self, context: bpy.types.Context):
-        global _worker_thread, _timer_handle, _pending_window_ptr
+        global _worker_thread, _timer_handle, _pending_window_ptr, _active_request_id
 
         prefs = _addon_preferences(context)
         if prefs is None:
@@ -159,9 +193,11 @@ class BG_OT_send(bpy.types.Operator):
 
         wm = context.window_manager
         g = wm.blender_gpt
-        if g.busy:
+        if g.busy and _worker_alive():
             self.report({"WARNING"}, "Already busy.")
             return {"CANCELLED"}
+        if g.busy:
+            g.busy = False
 
         if not (g.prompt or "").strip():
             self.report({"WARNING"}, "Prompt is empty.")
@@ -173,12 +209,10 @@ class BG_OT_send(bpy.types.Operator):
         user = system_prompt.build_user_message(digest, g.prompt)
         num_ctx = int(prefs.num_ctx) if prefs.num_ctx > 0 else 0
 
+        _active_request_id += 1
+        request_id = _active_request_id
         _cancel_event.clear()
-        while True:
-            try:
-                _result_queue.get_nowait()
-            except queue.Empty:
-                break
+        _drain_result_queue()
 
         g.busy = True
         g.status = "Calling Ollama…"
@@ -187,6 +221,7 @@ class BG_OT_send(bpy.types.Operator):
 
         t = threading.Thread(
             target=_worker_main,
+            args=(request_id,),
             kwargs={
                 "base_url": prefs.base_url,
                 "model": prefs.model,
@@ -199,10 +234,7 @@ class BG_OT_send(bpy.types.Operator):
         _worker_thread = t
         t.start()
 
-        if _timer_handle is not None and bpy.app.timers.is_registered(_timer_handle):
-            bpy.app.timers.unregister(_timer_handle)
-        _timer_handle = _timer_poll
-        bpy.app.timers.register(_timer_poll, first_interval=0.12)
+        _ensure_result_timer()
         return {"FINISHED"}
 
 
@@ -211,11 +243,41 @@ class BG_OT_stop(bpy.types.Operator):
     bl_label = "Stop BlenderGPT"
     bl_options = {"REGISTER"}
 
+    @classmethod
+    def poll(cls, context: bpy.types.Context):
+        g = context.window_manager.blender_gpt
+        return g.busy
+
     def execute(self, context: bpy.types.Context):
+        global _active_request_id
+
+        _active_request_id += 1
         _cancel_event.set()
         wm = context.window_manager
         g = wm.blender_gpt
-        g.status = "Stopping…"
+        _finish_request(
+            g,
+            "Cancelled. (Ollama may still finish in the background; you can send a new prompt.)",
+        )
+        _drain_result_queue()
+        _ensure_result_timer()
+        return {"FINISHED"}
+
+
+class BG_OT_reset(bpy.types.Operator):
+    bl_idname = "blender_gpt.reset"
+    bl_label = "Reset BlenderGPT"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context: bpy.types.Context):
+        global _active_request_id
+
+        _active_request_id += 1
+        _cancel_event.set()
+        _drain_result_queue()
+        g = context.window_manager.blender_gpt
+        _finish_request(g, "")
+        self.report({"INFO"}, "BlenderGPT state cleared.")
         return {"FINISHED"}
 
 
@@ -241,6 +303,7 @@ classes = (
     BlenderGPTState,
     BG_OT_send,
     BG_OT_stop,
+    BG_OT_reset,
     BG_OT_ping,
 )
 

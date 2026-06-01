@@ -1,0 +1,64 @@
+Allowed actions only (unknown ops are ignored).
+
+1) create_primitive — basic solids
+   {"op":"create_primitive","primitive":"CUBE"|"SPHERE"|"CYLINDER"|"CONE"|"PLANE"|"TORUS"|"ICO_SPHERE"|"MONKEY","name":"OptionalName","location":[x,y,z],
+    "size": number optional (CUBE only, uniform scale),
+    "scale":[sx,sy,sz] optional — applies to the new mesh object}
+
+2) delete_objects
+   {"op":"delete_objects","names":["ObjectName",...]}
+
+3) set_transform
+   {"op":"set_transform","name":"ObjectName","location":[x,y,z] optional,"rotation_euler":[rx,ry,rz] radians optional,"scale":[sx,sy,sz] optional}
+
+4) rename_object
+   {"op":"rename_object","from_name":"Old","to_name":"New"}
+
+5) shade_smooth / shade_flat (mesh)
+   {"op":"shade_smooth","name":"MeshObject"}
+   {"op":"shade_flat","name":"MeshObject"}
+
+6) add_modifier — SUBSURF plus common print-related modifiers
+   {"op":"add_modifier","name":"MeshObject","modifier_type":"SUBSURF","modifier_name":"Subdivision","levels":2}
+   {"op":"add_modifier","name":"Part","modifier_type":"SOLIDIFY","thickness":0.002,"solidify_offset":0.0}
+   {"op":"add_modifier","name":"Part","modifier_type":"BEVEL","width":0.0005,"segments":2}
+   {"op":"add_modifier","name":"Part","modifier_type":"ARRAY","count":4,"relative_offset_displace":[1,0,0]}
+   {"op":"add_modifier","name":"Part","modifier_type":"MIRROR","mirror_axis":"X"}
+
+7) boolean_difference / boolean_union / boolean_intersect
+   {"op":"boolean_difference","target":"MeshToModify","cutter":"CutterMesh","apply":true,"delete_cutter":false,"solver":"EXACT"|"FAST"}
+   Position cutter with set_transform, then boolean. "apply": true bakes mesh; false keeps live modifier.
+
+8) groove_box_cut — axis-aligned slot (box cutter + difference)
+   {"op":"groove_box_cut","target":"MeshName","center":[x,y,z],"groove_axis":"X"|"Y"|"Z","length":1.0,"width":0.05,"depth":0.1,
+    "cutter_name":"OptionalName","apply":true,"delete_cutter":true,"solver":"EXACT"}
+
+9) create_armature — simple connected bone chain along one axis
+   {"op":"create_armature","name":"Rig","location":[x,y,z],"axis":"Y"|"X"|"Z"|"-Y"…,"bone_count":5,"segment_length":0.25}
+
+10) set_print_units — metric millimetre-style preset
+    {"op":"set_print_units"}
+
+11) apply_scale
+    {"op":"apply_scale","names":["Part"]}  or  {"op":"apply_scale","name":"Part"}
+
+12) export_stl
+    {"op":"export_stl","name":"Part","filepath":"/absolute/path/part.stl"}
+
+13) join_meshes
+    {"op":"join_meshes","names":["Base","Addon","Rib"]}
+
+14) duplicate_object
+    {"op":"duplicate_object","name":"Bolt","new_name":"Bolt_copy","linked":false}
+
+15) merge_by_distance
+    {"op":"merge_by_distance","name":"Part","threshold":0.0001}
+
+16) normals_make_consistent
+    {"op":"normals_make_consistent","name":"Part","inside":false}
+
+17) origin_to_geometry
+    {"op":"origin_to_geometry","name":"Part"}
+
+18) place_on_build_plate
+    {"op":"place_on_build_plate","name":"Part"}

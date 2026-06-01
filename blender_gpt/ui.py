@@ -23,13 +23,16 @@ class VIEW3D_PT_blender_gpt(bpy.types.Panel):
         row = layout.row(align=True)
         row.operator("blender_gpt.ping", text="Test Ollama", icon="CHECKMARK")
         row.operator("preferences.addon_show", text="Settings", icon="PREFERENCES").module = ADDON_ID
+        if g.status or g.busy:
+            row.operator("blender_gpt.reset", text="Reset", icon="LOOP_BACK")
 
         layout.separator()
         layout.prop(g, "prompt", text="")
         row = layout.row(align=True)
         row.operator("blender_gpt.send", text="Ask BlenderGPT", icon="PLAY")
-        stop = row.operator("blender_gpt.stop", text="Stop", icon="CANCEL")
-        stop.enabled = g.busy
+        stop_row = row.row(align=True)
+        stop_row.enabled = g.busy
+        stop_row.operator("blender_gpt.stop", text="Stop", icon="CANCEL")
 
         if g.busy:
             layout.label(text="Working…", icon="TIME")

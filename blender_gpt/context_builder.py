@@ -58,17 +58,28 @@ def build_scene_digest(context: bpy.types.Context, max_chars: int) -> str:
         if obj.parent is None:
             lines.extend(_object_lines(obj, 1))
 
+    us = scene.unit_settings
+    lines.append(
+        f"unit_settings: system={us.system} length_unit={us.length_unit} "
+        f"scale_length={us.scale_length}"
+    )
+
     lines.append("")
-    lines.append("Selection:")
+    lines.append(
+        "Selection (use for 'selected', 'this', 'it'; active_object for singular edits):"
+    )
     sel = list(context.view_layer.objects.selected)
     if not sel:
-        lines.append("  (none)")
+        lines.append("  selected_objects: (none)")
     else:
+        lines.append("  selected_objects: " + ", ".join(obj.name for obj in sel))
         for obj in sel:
             lines.extend(_object_lines(obj, 1))
-        if context.view_layer.objects.active:
-            a = context.view_layer.objects.active
-            lines.append(f"  active_object: {a.name!r}")
+    active = context.view_layer.objects.active
+    if active:
+        lines.append(f"  active_object: {active.name!r}")
+    elif len(sel) == 1:
+        lines.append(f"  active_object: {sel[0].name!r}  (only selection)")
 
     text = "\n".join(lines)
     if len(text) > max_chars:
