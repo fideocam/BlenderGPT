@@ -3,6 +3,12 @@ import bpy
 from .operators import ADDON_ID
 
 
+def _status_line(g: bpy.types.PropertyGroup) -> str:
+    if g.busy:
+        return (g.status or "Calling Ollama…").strip()
+    return (g.status or "").strip()
+
+
 class VIEW3D_PT_blender_gpt(bpy.types.Panel):
     bl_label = "BlenderGPT"
     bl_idname = "VIEW3D_PT_blender_gpt"
@@ -20,34 +26,39 @@ class VIEW3D_PT_blender_gpt(bpy.types.Panel):
             layout.label(text="Enable the add-on in Preferences.", icon="ERROR")
             return
 
-        row = layout.row(align=True)
-        row.operator("blender_gpt.ping", text="Test Ollama", icon="CHECKMARK")
-        row.operator("preferences.addon_show", text="Settings", icon="PREFERENCES").module = ADDON_ID
-        if g.status or g.busy:
-            row.operator("blender_gpt.reset", text="Reset", icon="LOOP_BACK")
+        layout.operator(
+            "preferences.addon_show", text="Settings", icon="PREFERENCES"
+        ).module = ADDON_ID
 
         layout.separator()
         layout.prop(g, "prompt", text="")
+
         row = layout.row(align=True)
-        row.operator("blender_gpt.send", text="Ask BlenderGPT", icon="PLAY")
-        stop_row = row.row(align=True)
-        stop_row.enabled = g.busy
-        stop_row.operator("blender_gpt.stop", text="Stop", icon="CANCEL")
-
         if g.busy:
-            layout.label(text="Working…", icon="TIME")
+            row.operator("blender_gpt.stop", text="Stop", icon="CANCEL")
+        else:
+            row.operator("blender_gpt.send", text="Ask BlenderGPT", icon="PLAY")
 
-        if g.status:
-            box = layout.box()
-            box.label(text="Status:", icon="INFO")
-            for line in (g.status[:2000]).split("\n")[:12]:
-                box.label(text=line)
+        status = _status_line(g)
+        if status:
+            stat_row = row.row(align=True)
+            stat_row.enabled = False
+            stat_row.label(
+                text=status if len(status) <= 140 else status[:137] + "…",
+                icon="TIME" if g.busy else "INFO",
+            )
 
         layout.separator()
-        layout.label(text="Response:")
-        col = layout.column(align=True)
-        col.scale_y = 0.9
-        col.prop(g, "response", text="")
+        layout.label(text="Response:", icon="TEXT")
+        if g.response:
+            box = layout.box()
+            for line in g.response.split("\n")[:40]:
+                box.label(text=line)
+            if g.response.count("\n") >= 40:
+                box.label(text="…")
+        else:
+            layout.label(text="(reply appears here)", icon="INFO")
+        layout.prop(g, "response", text="")
 
 
 def register():

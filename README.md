@@ -4,9 +4,11 @@ Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model
 
 ## Install
 
-1. Copy the `blender_gpt` folder into Blender’s `scripts/addons` directory, **or** zip the `blender_gpt` folder and use **Edit → Preferences → Add-ons → Install…**.
+1. Install with either method:
+   - Use the bundled archive in this repo: **Edit → Preferences → Add-ons → Install…** and select `BlenderGPT.zip` from the repository root.
+   - Or copy the `blender_gpt` folder into Blender’s `scripts/addons` directory (advanced/manual method).
 2. Enable **Interface → BlenderGPT**.
-3. In add-on preferences, set **Ollama base URL** (default `http://127.0.0.1:11434`) and **Model** (e.g. `llama3.2`).
+3. In add-on preferences, set **Ollama base URL** (default `http://127.0.0.1:11434`) and **Model** (e.g. `llama3.2`), then **Sync context from model** so `num_ctx` and scene size match your model (128k/256k, etc.).
 4. In the **3D Viewport**, open the sidebar (**N**) → **BlenderGPT** tab.
 
 ## Requirements
@@ -16,7 +18,7 @@ Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model
 
 ## Usage
 
-- **Test Ollama** checks `/api/tags`.
+- In add-on **Preferences**, **Test connection** wakes Ollama and preloads the model; **Ask BlenderGPT** does this automatically (see **Auto-start Ollama** / **Preload model on ask**).
 - Type a prompt, **Ask BlenderGPT**. The add-on sends the system prompt, your text, and a text digest of the scene (truncated by **Max scene context** in preferences).
 - If the model ends its reply with a JSON object `{"actions":[...]}`, those actions are validated and applied on the main thread (one undo step).
 - **Stop** sets a cancel flag (the HTTP client may not interrupt immediately).
