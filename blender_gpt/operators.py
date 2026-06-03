@@ -335,80 +335,111 @@ def _start_polling() -> None:
     _log("poll timer started")
 
 
+def _start_request(
+    context: bpy.types.Context,
+    *,
+    prompt_text: str,
+    print_mode: bool = False,
+) -> tuple[set[str], str]:
+    global _worker_thread, _pending_window_ptr, _active_request_id, _request_started
+
+    prefs = _addon_preferences(context)
+    if prefs is None:
+        return {"CANCELLED"}, "Addon preferences not found."
+
+    wm = context.window_manager
+    g = wm.blender_gpt
+    if g.busy and _worker_alive():
+        return {"CANCELLED"}, "Already busy."
+    if g.busy:
+        g.busy = False
+
+    if not (prompt_text or "").strip():
+        return {"CANCELLED"}, "Prompt is empty."
+
+    try:
+        model = ollama_client.resolve_model_name(prefs.base_url, prefs.model)
+    except Exception as e:
+        _log(str(e))
+        return {"CANCELLED"}, str(e)
+
+    digest = context_builder.build_scene_digest(
+        context, max_chars=int(prefs.max_context_chars)
+    )
+    if print_mode:
+        user = system_prompt.build_print_mode_user_message(digest, prompt_text)
+    else:
+        user = system_prompt.build_user_message(digest, prompt_text)
+    num_ctx = int(prefs.num_ctx) if prefs.num_ctx > 0 else 0
+    timeout = float(getattr(prefs, "request_timeout", 600) or 600)
+
+    _active_request_id += 1
+    request_id = _active_request_id
+    _cancel_event.clear()
+    _drain_result_queue()
+    _drain_progress_queue()
+
+    g.busy = True
+    g.status = "Connecting to Ollama…"
+    g.response = ""
+    _request_started = time.monotonic()
+    w = context.window
+    _pending_window_ptr = w.as_pointer() if w else 0
+    _redraw_addon_ui()
+
+    t = threading.Thread(
+        target=_worker_main,
+        args=(request_id,),
+        kwargs={
+            "base_url": prefs.base_url,
+            "model": model,
+            "num_ctx": num_ctx,
+            "system": system_prompt.SYSTEM_PROMPT,
+            "user": user,
+            "timeout": timeout,
+            "auto_wake": bool(getattr(prefs, "auto_wake_ollama", True)),
+            "preload_model": bool(getattr(prefs, "preload_model", False)),
+        },
+        daemon=True,
+    )
+    _worker_thread = t
+    t.start()
+
+    _start_polling()
+    return {"FINISHED"}, model
+
+
 class BG_OT_send(bpy.types.Operator):
     bl_idname = "blender_gpt.send"
     bl_label = "Ask BlenderGPT"
     bl_options = {"REGISTER"}
 
     def execute(self, context: bpy.types.Context):
-        global _worker_thread, _pending_window_ptr, _active_request_id, _request_started
+        g = context.window_manager.blender_gpt
+        result, info = _start_request(context, prompt_text=g.prompt, print_mode=False)
+        if result == {"CANCELLED"}:
+            self.report({"ERROR"}, info)
+            return result
+        self.report({"INFO"}, f"Asking {info}… (see Response below when done)")
+        return result
 
-        prefs = _addon_preferences(context)
-        if prefs is None:
-            self.report({"ERROR"}, "Addon preferences not found.")
-            return {"CANCELLED"}
 
-        wm = context.window_manager
-        g = wm.blender_gpt
-        if g.busy and _worker_alive():
-            self.report({"WARNING"}, "Already busy.")
-            return {"CANCELLED"}
-        if g.busy:
-            g.busy = False
+class BG_OT_print(bpy.types.Operator):
+    bl_idname = "blender_gpt.print"
+    bl_label = "Prepare for Print"
+    bl_description = (
+        "Ask BlenderGPT with print-prep rules (units, cleanup, build plate) — does not slice or print"
+    )
+    bl_options = {"REGISTER"}
 
-        if not (g.prompt or "").strip():
-            self.report({"WARNING"}, "Prompt is empty.")
-            return {"CANCELLED"}
-
-        try:
-            model = ollama_client.resolve_model_name(prefs.base_url, prefs.model)
-        except Exception as e:
-            self.report({"ERROR"}, str(e))
-            _log(str(e))
-            return {"CANCELLED"}
-
-        digest = context_builder.build_scene_digest(
-            context, max_chars=int(prefs.max_context_chars)
-        )
-        user = system_prompt.build_user_message(digest, g.prompt)
-        num_ctx = int(prefs.num_ctx) if prefs.num_ctx > 0 else 0
-        timeout = float(getattr(prefs, "request_timeout", 600) or 600)
-
-        _active_request_id += 1
-        request_id = _active_request_id
-        _cancel_event.clear()
-        _drain_result_queue()
-        _drain_progress_queue()
-
-        g.busy = True
-        g.status = "Connecting to Ollama…"
-        g.response = ""
-        _request_started = time.monotonic()
-        w = context.window
-        _pending_window_ptr = w.as_pointer() if w else 0
-        _redraw_addon_ui()
-
-        t = threading.Thread(
-            target=_worker_main,
-            args=(request_id,),
-            kwargs={
-                "base_url": prefs.base_url,
-                "model": model,
-                "num_ctx": num_ctx,
-                "system": system_prompt.SYSTEM_PROMPT,
-                "user": user,
-                "timeout": timeout,
-                "auto_wake": bool(getattr(prefs, "auto_wake_ollama", True)),
-                "preload_model": bool(getattr(prefs, "preload_model", False)),
-            },
-            daemon=True,
-        )
-        _worker_thread = t
-        t.start()
-
-        _start_polling()
-        self.report({"INFO"}, f"Asking {model}… (see Response below when done)")
-        return {"FINISHED"}
+    def execute(self, context: bpy.types.Context):
+        g = context.window_manager.blender_gpt
+        result, info = _start_request(context, prompt_text=g.prompt, print_mode=True)
+        if result == {"CANCELLED"}:
+            self.report({"ERROR"}, info)
+            return result
+        self.report({"INFO"}, f"Print prep via {info}…")
+        return result
 
 
 class BG_OT_stop(bpy.types.Operator):
@@ -514,6 +545,7 @@ class BG_OT_sync_context(bpy.types.Operator):
 classes = (
     BlenderGPTState,
     BG_OT_send,
+    BG_OT_print,
     BG_OT_stop,
     BG_OT_reset,
     BG_OT_ping,

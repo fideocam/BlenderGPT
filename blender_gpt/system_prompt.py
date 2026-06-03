@@ -43,3 +43,24 @@ def build_user_message(scene_digest: str, user_prompt: str) -> str:
         + "\n\n=== User request ===\n"
         + user_prompt.strip()
     )
+
+
+def build_print_mode_user_message(scene_digest: str, user_prompt: str) -> str:
+    """Print-prep request wrapper used by the Prepare for Print button."""
+    return (
+        "=== Scene digest ===\n"
+        + scene_digest.strip()
+        + "\n\n=== User request ===\n"
+        + user_prompt.strip()
+        + "\n\n=== Print mode (strict) ===\n"
+        + "This request is for 3D printing. Prioritize printability and machine-safe geometry.\n"
+        + "Use this workflow unless user explicitly asks otherwise:\n"
+        + "1) set_print_units\n"
+        + "2) create/modify geometry to match dimensions\n"
+        + "3) add printability fixes (minimum wall/feature sizes, clearances)\n"
+        + "4) merge_by_distance and normals_make_consistent\n"
+        + "5) origin_to_geometry and place_on_build_plate\n"
+        + "6) apply_scale\n"
+        + "7) export_stl only if filepath is provided\n"
+        + "If details are missing, choose practical defaults and state assumptions briefly."
+    )

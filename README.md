@@ -2,6 +2,10 @@
 
 Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model using a **scene digest** and **selection**, then optionally apply **small JSON-defined edits** (primitives, transforms, delete, rename, smooth shading, a subset of modifiers).
 
+## Problem statement
+
+General-purpose LLM instructions often produce geometry that looks right but is hard to print: wrong units, thin walls, floating parts, unapplied scale, and missing cleanup before export. BlenderGPT includes a **Prepare for Print** button that asks the model to prioritize printability and run a stricter preparation flow (it does not slice or send jobs to a printer).
+
 ## Install
 
 1. Install with either method:
@@ -20,6 +24,7 @@ Blender add-on in the spirit of **ArchiGPT**: chat with a local **Ollama** model
 
 - In add-on **Preferences**, **Test connection** wakes Ollama and preloads the model; **Ask BlenderGPT** does this automatically (see **Auto-start Ollama** / **Preload model on ask**).
 - Type a prompt, **Ask BlenderGPT**. The add-on sends the system prompt, your text, and a text digest of the scene (truncated by **Max scene context** in preferences).
+- Type a prompt, **Prepare for Print** (bottom of the panel) for print-prep behavior: stricter printability instructions (units, cleanup, build-plate placement, scale apply).
 - If the model ends its reply with a JSON object `{"actions":[...]}`, those actions are validated and applied on the main thread (one undo step).
 - **Stop** sets a cancel flag (the HTTP client may not interrupt immediately).
 
@@ -57,10 +62,6 @@ blender --background --python tests/blender_e2e.py
 pytest tests/test_blender_subprocess.py
 ```
 
-## Related workspaces
-
-ArchiMate / PowerPoint EMF tooling lives in a **separate folder**: `EA-PowerPoint-tools` next to this repo on your machine (or open **`BlenderGPT-EA-Drone.code-workspace`** on the Desktop for a multi-root Cursor setup). Drone experiments use the **`drone`** folder.
-
 ## License
 
-MIT (aligned with the ArchiGPT / Archi ecosystem).
+MIT (aligned with the Blender ecosystem).

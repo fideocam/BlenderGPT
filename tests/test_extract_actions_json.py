@@ -120,3 +120,22 @@ def test_3d_print_workflow_ops_parse():
         "export_stl",
     ]
     assert actions[-1]["filepath"] == "/tmp/bracket.stl"
+
+
+def test_prototype_ops_parse():
+    text = """Prototype helpers.
+{"actions":[
+  {"op":"create_bolt_hole","target":"Plate","standard":"M3","center":[0,0,0],"axis":"Z","through":true},
+  {"op":"create_nut_trap","target":"Plate","standard":"M3","center":[0,0,0.002],"depth":0.003},
+  {"op":"create_insert_pocket","target":"Housing","standard":"M3","center":[0,0,0],"depth_mm":4.5},
+  {"op":"create_standoff","name":"StandoffA","location":[0,0,0],"height":0.01,"outer_diameter":0.008,"hole_diameter":0.0034},
+  {"op":"check_manufacturability","names":["Plate","Housing"]}
+]}"""
+    actions = extract_actions_json(text)
+    assert [a["op"] for a in actions] == [
+        "create_bolt_hole",
+        "create_nut_trap",
+        "create_insert_pocket",
+        "create_standoff",
+        "check_manufacturability",
+    ]

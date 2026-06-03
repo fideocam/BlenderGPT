@@ -62,3 +62,26 @@ Allowed actions only (unknown ops are ignored).
 
 18) place_on_build_plate
     {"op":"place_on_build_plate","name":"Part"}
+
+19) create_bolt_hole — standard clearance/tap hole shortcut
+    {"op":"create_bolt_hole","target":"Part","standard":"M3","axis":"Z","through":true,
+     "clearance_mm":0.2,"apply":true,"delete_cutter":true,"solver":"EXACT"}
+    Omit "center" to auto-place at Part's world_bbox_center (recommended). Optional "center":[x,y,z] only when exact placement is known from digest.
+    You may also pass explicit "diameter" in scene units instead of "standard".
+
+20) create_nut_trap — hex pocket for captive nut
+    {"op":"create_nut_trap","target":"Part","standard":"M3","center":[x,y,z],"axis":"Z","depth":0.003,
+     "across_flats_mm":5.5,"clearance_mm":0.2,"apply":true,"delete_cutter":true}
+
+21) create_insert_pocket — heat-set insert pocket
+    {"op":"create_insert_pocket","target":"Part","standard":"M3","center":[x,y,z],"axis":"Z",
+     "outer_diameter_mm":4.6,"depth_mm":4.5,"clearance_mm":0.15,"apply":true,"delete_cutter":true}
+
+22) create_standoff — create standoff boss with center hole (optionally union to target)
+    {"op":"create_standoff","name":"PCB_Standoff","location":[x,y,z],"axis":"Z","outer_diameter":0.008,"height":0.01,
+     "hole_diameter":0.0034}
+    Optional union: add "target":"Part","apply_union":true,"delete_standoff":true
+
+23) check_manufacturability — basic deterministic topology checks
+    {"op":"check_manufacturability","name":"Part"}  or  {"op":"check_manufacturability","names":["PartA","PartB"]}
+    Reports PASS/WARN/FAIL with non-manifold, boundary-edge, and degenerate-face counts.

@@ -26,17 +26,15 @@ class VIEW3D_PT_blender_gpt(bpy.types.Panel):
             layout.label(text="Enable the add-on in Preferences.", icon="ERROR")
             return
 
-        layout.operator(
-            "preferences.addon_show", text="Settings", icon="PREFERENCES"
-        ).module = ADDON_ID
-
         layout.separator()
         layout.prop(g, "prompt", text="")
 
         row = layout.row(align=True)
         if g.busy:
+            row.alignment = "RIGHT"
             row.operator("blender_gpt.stop", text="Stop", icon="CANCEL")
         else:
+            row.alignment = "RIGHT"
             row.operator("blender_gpt.send", text="Ask BlenderGPT", icon="PLAY")
 
         status = _status_line(g)
@@ -59,6 +57,17 @@ class VIEW3D_PT_blender_gpt(bpy.types.Panel):
         else:
             layout.label(text="(reply appears here)", icon="INFO")
         layout.prop(g, "response", text="")
+
+        layout.separator()
+        footer = layout.row(align=True)
+        footer.operator(
+            "blender_gpt.print",
+            text="Prepare for Print",
+            icon="EXPORT",
+        )
+        footer.operator(
+            "preferences.addon_show", text="Settings", icon="PREFERENCES"
+        ).module = ADDON_ID
 
 
 def register():
