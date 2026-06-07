@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import queue
+import re
 import threading
 import time
 import traceback
@@ -10,9 +12,26 @@ from typing import Any, Optional
 
 import bpy
 
+from json import JSONDecoder
+
 from . import apply_actions, context_builder, ollama_client, system_prompt
 
-ADDON_ID = "blender_gpt"
+# Legacy install: "blender_gpt". Extensions platform: e.g. "bl_ext.blender_org.blender_gpt".
+ADDON_ID = __package__
+
+
+def _addon_module_keys() -> tuple[str, ...]:
+    keys = [__package__, "blender_gpt", f"bl_ext.blender_org.{__package__.rsplit('.', 1)[-1]}"]
+    if __package__ != "blender_gpt":
+        keys.append(f"bl_ext.user_default.{__package__.rsplit('.', 1)[-1]}")
+    return tuple(dict.fromkeys(k for k in keys if k))
+
+
+def resolve_addon_id(context: bpy.types.Context) -> str:
+    for key in _addon_module_keys():
+        if key in context.preferences.addons:
+            return key
+    return ADDON_ID
 
 _result_queue: queue.Queue = queue.Queue(maxsize=256)
 _progress_queue: queue.Queue = queue.Queue(maxsize=64)
@@ -97,7 +116,8 @@ def _redraw_addon_ui() -> None:
 
 
 def _addon_preferences(context: bpy.types.Context):
-    addon = context.preferences.addons.get(ADDON_ID)
+    key = resolve_addon_id(context)
+    addon = context.preferences.addons.get(key)
     if addon is None:
         return None
     return addon.preferences
@@ -122,6 +142,37 @@ class BlenderGPTState(bpy.types.PropertyGroup):
         maxlen=4096,
     )
     busy: bpy.props.BoolProperty(name="Busy", default=False)
+
+
+RESPONSE_TEXT_NAME = "BlenderGPT_Response"
+
+
+def _sync_response_text_block(text: str) -> None:
+    """Keep a Text datablock in sync so the reply is easy to open and copy in the Text Editor."""
+    block = bpy.data.texts.get(RESPONSE_TEXT_NAME)
+    if block is None:
+        block = bpy.data.texts.new(RESPONSE_TEXT_NAME)
+    else:
+        block.clear()
+    if text:
+        block.write(text)
+
+
+def _actions_json_snippet(response: str) -> str:
+    actions = apply_actions.extract_actions_json(response)
+    if actions:
+        return json.dumps({"actions": actions}, indent=2)
+    text = (response or "").strip()
+    for match in re.finditer(r'"actions"\s*:', text):
+        start = text.rfind("{", 0, match.start())
+        if start == -1:
+            continue
+        try:
+            _obj, end = JSONDecoder().raw_decode(text[start:])
+            return text[start : start + end]
+        except json.JSONDecodeError:
+            continue
+    return ""
 
 
 def _window_from_ptr(ptr: int) -> Optional[bpy.types.Window]:
@@ -203,6 +254,18 @@ def _context_override_for_window() -> dict[str, Any]:
         if vl is None:
             vl = scene.view_layers[0]
         override["view_layer"] = vl
+    screen = getattr(window, "screen", None)
+    if screen is not None:
+        override["screen"] = screen
+        for area in screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            override["area"] = area
+            for region in area.regions:
+                if region.type == "WINDOW":
+                    override["region"] = region
+                    break
+            break
     return override
 
 
@@ -211,17 +274,25 @@ def _deliver_result(context: bpy.types.Context, request_id: int, kind: str, data
     try:
         if kind == "ok":
             g.response = data or "(empty reply)"
+            _sync_response_text_block(g.response)
             g.status = "Applying actions (if any)…"
             _redraw_addon_ui()
             actions = apply_actions.extract_actions_json(data)
+            _log(f"parsed {len(actions)} action(s) from reply")
             override = _context_override_for_window()
-            if actions and override:
-                with bpy.context.temp_override(**override):
-                    logs = apply_actions.apply_actions(bpy.context, actions)
+            if actions:
+                if override:
+                    with bpy.context.temp_override(**override):
+                        logs = apply_actions.apply_actions(bpy.context, actions)
+                else:
+                    logs = apply_actions.apply_actions(context, actions)
                 g.status = "Done. " + (" ".join(logs) if logs else "No structured actions applied.")
-            elif actions:
-                logs = apply_actions.apply_actions(context, actions)
-                g.status = "Done. " + (" ".join(logs) if logs else "No structured actions applied.")
+            elif re.search(r'"actions"\s*:', data or ""):
+                g.status = (
+                    "Done. Reply contained actions JSON but parsing failed — "
+                    "see System Console (Window → Toggle System Console)."
+                )
+                _log("could not parse actions JSON from assistant reply")
             else:
                 g.status = "Done."
         elif kind == "cancel":
@@ -508,6 +579,78 @@ class BG_OT_ping(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BG_OT_copy_response(bpy.types.Operator):
+    bl_idname = "blender_gpt.copy_response"
+    bl_label = "Copy Response"
+    bl_description = "Copy the full assistant reply to the system clipboard"
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    def execute(self, context: bpy.types.Context):
+        text = context.window_manager.blender_gpt.response or ""
+        if not text.strip():
+            self.report({"WARNING"}, "Response is empty.")
+            return {"CANCELLED"}
+        context.window_manager.clipboard = text
+        self.report({"INFO"}, f"Copied {len(text)} characters.")
+        return {"FINISHED"}
+
+
+class BG_OT_copy_actions_json(bpy.types.Operator):
+    bl_idname = "blender_gpt.copy_actions_json"
+    bl_label = "Copy JSON"
+    bl_description = "Copy the actions JSON block from the reply to the system clipboard"
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    def execute(self, context: bpy.types.Context):
+        response = context.window_manager.blender_gpt.response or ""
+        snippet = _actions_json_snippet(response)
+        if not snippet:
+            self.report({"WARNING"}, "No actions JSON found in the response.")
+            return {"CANCELLED"}
+        context.window_manager.clipboard = snippet
+        self.report({"INFO"}, f"Copied JSON ({len(snippet)} characters).")
+        return {"FINISHED"}
+
+
+class BG_OT_open_response_text(bpy.types.Operator):
+    bl_idname = "blender_gpt.open_response_text"
+    bl_label = "Open in Text Editor"
+    bl_description = (
+        "Open the reply in a Text Editor area (select all and copy with Cmd/Ctrl+C)"
+    )
+    bl_options = {"REGISTER", "INTERNAL"}
+
+    def execute(self, context: bpy.types.Context):
+        g = context.window_manager.blender_gpt
+        _sync_response_text_block(g.response or "")
+        block = bpy.data.texts.get(RESPONSE_TEXT_NAME)
+        if block is None:
+            self.report({"WARNING"}, "Response is empty.")
+            return {"CANCELLED"}
+
+        window = context.window
+        screen = window.screen if window else None
+        if screen is not None:
+            for area in screen.areas:
+                if area.type != "TEXT_EDITOR":
+                    continue
+                area.spaces.active.text = block
+                self.report({"INFO"}, f"Opened {RESPONSE_TEXT_NAME!r} in Text Editor.")
+                return {"FINISHED"}
+            for area in screen.areas:
+                if area.type == "VIEW_3D":
+                    area.type = "TEXT_EDITOR"
+                    area.spaces.active.text = block
+                    self.report({"INFO"}, f"Opened {RESPONSE_TEXT_NAME!r} in Text Editor.")
+                    return {"FINISHED"}
+
+        self.report(
+            {"INFO"},
+            f"Text block {RESPONSE_TEXT_NAME!r} updated — open Text Editor from the area header.",
+        )
+        return {"FINISHED"}
+
+
 class BG_OT_sync_context(bpy.types.Operator):
     bl_idname = "blender_gpt.sync_context"
     bl_label = "Sync context from model"
@@ -549,6 +692,9 @@ classes = (
     BG_OT_stop,
     BG_OT_reset,
     BG_OT_ping,
+    BG_OT_copy_response,
+    BG_OT_copy_actions_json,
+    BG_OT_open_response_text,
     BG_OT_sync_context,
 )
 

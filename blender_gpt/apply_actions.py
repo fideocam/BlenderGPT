@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 from json import JSONDecoder
 from typing import Any
 
@@ -16,32 +17,97 @@ import bpy
 from .context_builder import world_bbox_stats
 
 
-def extract_actions_json(assistant_text: str) -> list[dict[str, Any]]:
-    """
-    Find the last JSON object in the message that contains an \"actions\" array.
-    """
-    text = assistant_text.strip()
-    markers = ('{"actions"', "{'actions'")
-    idx = -1
-    for m in markers:
-        j = text.rfind(m)
-        idx = max(idx, j)
-    if idx == -1:
-        return []
-    snippet = text[idx:]
-    try:
-        obj, _end = JSONDecoder().raw_decode(snippet)
-    except json.JSONDecodeError:
-        return []
+def _strip_markdown_fences(text: str) -> str:
+    if "```" not in text:
+        return text
+    chunks: list[str] = []
+    for part in text.split("```"):
+        chunk = part.strip()
+        if not chunk:
+            continue
+        if chunk.lower().startswith("json"):
+            chunk = chunk[4:].lstrip()
+        chunks.append(chunk)
+    return chunks[-1] if chunks else text
 
-    actions = obj.get("actions")
+
+def _actions_from_decoded(obj: Any) -> list[dict[str, Any]]:
+    actions = obj.get("actions") if isinstance(obj, dict) else None
     if not isinstance(actions, list):
         return []
     out: list[dict[str, Any]] = []
     for item in actions:
         if isinstance(item, dict) and isinstance(item.get("op"), str):
-            out.append(item)
+            out.append(_normalize_action(item))
     return out
+
+
+def _normalize_action(raw: dict[str, Any]) -> dict[str, Any]:
+    """Map common LLM op names (e.g. create_cylinder) to supported ops."""
+    op = raw.get("op")
+    if not isinstance(op, str):
+        return raw
+    key = op.strip().lower()
+    primitive_aliases = {
+        "create_cube": "CUBE",
+        "create_sphere": "SPHERE",
+        "create_uv_sphere": "SPHERE",
+        "create_cylinder": "CYLINDER",
+        "create_cone": "CONE",
+        "create_plane": "PLANE",
+        "create_torus": "TORUS",
+        "create_monkey": "MONKEY",
+        "add_cube": "CUBE",
+        "add_sphere": "SPHERE",
+        "add_cylinder": "CYLINDER",
+        "add_cone": "CONE",
+        "add_plane": "PLANE",
+    }
+    prim = primitive_aliases.get(key)
+    if prim is None:
+        return raw
+    out = dict(raw)
+    out["op"] = "create_primitive"
+    out.setdefault("primitive", prim)
+    return out
+
+
+def extract_actions_json(assistant_text: str) -> list[dict[str, Any]]:
+    """
+    Find the last JSON object in the message that contains an \"actions\" array.
+    Tolerates markdown fences and pretty-printed JSON (models often add spaces/newlines).
+    """
+    text = _strip_markdown_fences(assistant_text.strip())
+    if not text:
+        return []
+
+    # Fast path: compact JSON at end of message
+    for marker in ('{"actions"', '{ "actions"', "{\n\"actions\"", "{\n  \"actions\""):
+        idx = text.rfind(marker.split("\n")[0] if "\n" in marker else marker)
+        if idx == -1 and marker.startswith("{ "):
+            idx = text.rfind('{"actions"')
+        if idx != -1:
+            try:
+                obj, _end = JSONDecoder().raw_decode(text[idx:])
+                parsed = _actions_from_decoded(obj)
+                if parsed or (isinstance(obj, dict) and isinstance(obj.get("actions"), list)):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+
+    # Robust path: last valid {\"actions\": ...} block (handles arbitrary whitespace)
+    best: list[dict[str, Any]] = []
+    for match in re.finditer(r'"actions"\s*:', text):
+        start = text.rfind("{", 0, match.start())
+        if start == -1:
+            continue
+        try:
+            obj, _end = JSONDecoder().raw_decode(text[start:])
+        except json.JSONDecodeError:
+            continue
+        best = _actions_from_decoded(obj)
+
+    return best
 
 
 def _find_object(name: str) -> bpy.types.Object | None:
@@ -60,6 +126,7 @@ def apply_actions(context: bpy.types.Context, actions: list[dict[str, Any]]) -> 
     bpy.ops.ed.undo_push(message="BlenderGPT apply")
 
     for raw in actions:
+        raw = _normalize_action(raw)
         op = raw.get("op")
         try:
             if op == "create_primitive":
@@ -128,6 +195,19 @@ def _vec3(val: Any, default=(0.0, 0.0, 0.0)) -> tuple[float, float, float]:
     return default
 
 
+def _mesh_add_kwargs(raw: dict[str, Any], loc: tuple[float, float, float]) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"location": loc}
+    radius = raw.get("radius")
+    if radius is None and raw.get("diameter") is not None:
+        radius = float(raw["diameter"]) / 2.0
+    depth = raw.get("depth", raw.get("height"))
+    if isinstance(radius, (int, float)) and float(radius) > 0:
+        kwargs["radius"] = float(radius)
+    if isinstance(depth, (int, float)) and float(depth) > 0:
+        kwargs["depth"] = float(depth)
+    return kwargs
+
+
 def _apply_create_primitive(
     context: bpy.types.Context,
     raw: dict[str, Any],
@@ -137,6 +217,7 @@ def _apply_create_primitive(
     name = raw.get("name")
     loc = _vec3(raw.get("location"), (0.0, 0.0, 0.0))
     size = raw.get("size")
+    cyl_kwargs = _mesh_add_kwargs(raw, loc)
 
     view_layer = context.view_layer
     prev_active = view_layer.objects.active
@@ -148,9 +229,9 @@ def _apply_create_primitive(
         elif prim == "SPHERE":
             bpy.ops.mesh.primitive_uv_sphere_add(location=loc)
         elif prim == "CYLINDER":
-            bpy.ops.mesh.primitive_cylinder_add(location=loc)
+            bpy.ops.mesh.primitive_cylinder_add(**cyl_kwargs)
         elif prim == "CONE":
-            bpy.ops.mesh.primitive_cone_add(location=loc)
+            bpy.ops.mesh.primitive_cone_add(**cyl_kwargs)
         elif prim == "PLANE":
             bpy.ops.mesh.primitive_plane_add(location=loc)
         elif prim == "TORUS":

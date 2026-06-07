@@ -122,6 +122,28 @@ def test_3d_print_workflow_ops_parse():
     assert actions[-1]["filepath"] == "/tmp/bracket.stl"
 
 
+def test_pretty_printed_json_with_fences():
+    text = """I'll add a cylinder.
+```json
+{
+  "actions": [
+    {"op": "create_primitive", "primitive": "CYLINDER", "name": "MyCylinder", "location": [0, 0, 0]}
+  ]
+}
+```"""
+    actions = extract_actions_json(text)
+    assert len(actions) == 1
+    assert actions[0]["primitive"] == "CYLINDER"
+
+
+def test_create_cylinder_alias_op():
+    text = '{"actions":[{"op":"create_cylinder","name":"Cyl","location":[0,0,0]}]}'
+    actions = extract_actions_json(text)
+    assert len(actions) == 1
+    assert actions[0]["op"] == "create_primitive"
+    assert actions[0]["primitive"] == "CYLINDER"
+
+
 def test_prototype_ops_parse():
     text = """Prototype helpers.
 {"actions":[

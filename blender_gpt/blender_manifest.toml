@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "blender_gpt"
-version = "0.1.0"
+version = "0.1.1"
 name = "BlenderGPT"
 tagline = "Ollama assistant with scene context and safe mesh edits"
 maintainer = "Raino Annala <raino.annala@gmail.com>"
