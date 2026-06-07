@@ -8,8 +8,39 @@ General-purpose LLM instructions often produce geometry that looks right but is 
 
 ## Install
 
+### Blender Extensions platform (extensions.blender.org)
+
+Blender 4.2+ expects a **`blender_manifest.toml`** inside the add-on package (included in `blender_gpt/`).
+
+Build the upload zip from the repository root:
+
+```bash
+./scripts/build_extension.sh
+```
+
+This writes:
+
+- `dist/blender_gpt-<version>.zip` — **upload this** to [extensions.blender.org](https://extensions.blender.org) (contains `blender_manifest.toml` at the top level)
+- `BlenderGPT-legacy.zip` — optional legacy layout (`blender_gpt/` folder inside) for older manual install
+
+If Blender is not on your `PATH`, set it explicitly:
+
+```bash
+BLENDER="/Applications/Blender.app/Contents/MacOS/Blender" ./scripts/build_extension.sh
+```
+
+Manual build (without Blender validation):
+
+```bash
+cd blender_gpt
+blender --command extension validate
+blender --command extension build
+```
+
+### Legacy install (local / manual)
+
 1. Install with either method:
-   - Use the bundled archive in this repo: **Edit → Preferences → Add-ons → Install…** and select `BlenderGPT.zip` from the repository root.
+   - Use the bundled archive: **Edit → Preferences → Add-ons → Install…** and select `BlenderGPT-legacy.zip` from the repository root (or run `./scripts/build_extension.sh` to regenerate it).
    - Or copy the `blender_gpt` folder into Blender’s `scripts/addons` directory (advanced/manual method).
 2. Enable **Interface → BlenderGPT**.
 3. In add-on preferences, set **Ollama base URL** (default `http://127.0.0.1:11434`) and **Model** (e.g. `llama3.2`), then **Sync context from model** so `num_ctx` and scene size match your model (128k/256k, etc.).
@@ -17,8 +48,9 @@ General-purpose LLM instructions often produce geometry that looks right but is 
 
 ## Requirements
 
-- Blender **4.0+** (tested against current API patterns).
+- Blender **4.2+** for the Extensions platform manifest; **4.0+** for legacy manual install.
 - [Ollama](https://ollama.com) running locally with your chosen model pulled.
+- Enable **Allow Online Access** in Blender if prompted (needed for local HTTP to Ollama).
 
 ## Usage
 
@@ -64,4 +96,4 @@ pytest tests/test_blender_subprocess.py
 
 ## License
 
-MIT (aligned with the Blender ecosystem).
+GPL-3.0-or-later (required for add-ons on [extensions.blender.org](https://extensions.blender.org); see `blender_gpt/blender_manifest.toml`).

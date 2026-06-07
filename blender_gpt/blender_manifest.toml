@@ -1,0 +1,26 @@
+schema_version = "1.0.0"
+
+id = "blender_gpt"
+version = "0.1.0"
+name = "BlenderGPT"
+tagline = "Ollama assistant with scene context and safe mesh edits"
+maintainer = "Raino Annala <raino.annala@gmail.com>"
+type = "add-on"
+
+website = "https://github.com/fideocam/BlenderGPT"
+
+tags = ["3D View", "Object"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+copyright = [
+  "2024-2026 Raino Annala",
+]
+
+[permissions]
+network = "Connect to a local Ollama server for LLM chat and model metadata"
+files = "Export STL files to user-specified paths when requested"
